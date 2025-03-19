@@ -1,0 +1,14 @@
+{
+    "name": "country-stats",
+    "version": "1.0.0",
+    "description": "Interactive 3D Globe with Country Statistics",
+    "scripts": {
+        "start": "npx live-server --port=8080 --no-browser"
+    },
+    "dependencies": {
+        "three": "^0.174.0"
+    },
+    "devDependencies": {
+        "vite": "^6.2.2"
+    }
+}
