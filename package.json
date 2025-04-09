@@ -10,5 +10,18 @@
     },
     "devDependencies": {
         "vite": "^6.2.2"
-    }
+    },
+    "main": "main.js",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/rajzzz/Country-Stats.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "commonjs",
+    "bugs": {
+        "url": "https://github.com/rajzzz/Country-Stats/issues"
+    },
+    "homepage": "https://github.com/rajzzz/Country-Stats#readme"
 }

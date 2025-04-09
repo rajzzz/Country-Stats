@@ -8,11 +8,11 @@ let hoveredCountry = null;
 let isDragging = false;
 let previousMousePosition = { x: 0, y: 0 };
 let globeRotation = { x: 0, y: 0 };
-let minZoom = 150;
+let minZoom = 110;
 let maxZoom = 400;
 let currentZoom = 200;
 let isAutoRotating = true;
-const autoRotationSpeed = 0.001; // Very slow rotation speed
+const autoRotationSpeed = 0.0005; // Very slow rotation speed
 
 // Add object pooling for geometries and materials
 let geometryPool = {
@@ -29,6 +29,11 @@ let materialPool = {
         flatShading: true
     })
 };
+
+// Add these to global variables
+let lastRotation = { x: 0, y: 0 };
+let targetRotation = { x: 0, y: 0 };
+const INTERPOLATION_FACTOR = 0.1;
 
 // Initialize the scene
 function init() {
@@ -61,7 +66,7 @@ function init() {
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
     
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.55);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.45);
     directionalLight.position.set(5, 3, 5);
     scene.add(directionalLight);
     
@@ -108,59 +113,59 @@ function createGlobe() {
 }
 
 // Create a simulated globe with fake continents in case the real data fails to load
-function createSimulatedGlobe(radius) {
-    // Create some simple continent shapes
-    const continentShapes = [
-        { lat: 40, lng: -100, width: 60, height: 30, name: "North America" },
-        { lat: 10, lng: -60, width: 40, height: 40, name: "South America" },
-        { lat: 50, lng: 10, width: 60, height: 40, name: "Europe" },
-        { lat: 10, lng: 20, width: 70, height: 60, name: "Africa" },
-        { lat: 40, lng: 100, width: 70, height: 50, name: "Asia" },
-        { lat: -25, lng: 135, width: 40, height: 30, name: "Australia" },
-    ];
+// function createSimulatedGlobe(radius) {
+//     // Create some simple continent shapes
+//     const continentShapes = [
+//         { lat: 40, lng: -100, width: 60, height: 30, name: "North America" },
+//         { lat: 10, lng: -60, width: 40, height: 40, name: "South America" },
+//         { lat: 50, lng: 10, width: 60, height: 40, name: "Europe" },
+//         { lat: 10, lng: 20, width: 70, height: 60, name: "Africa" },
+//         { lat: 40, lng: 100, width: 70, height: 50, name: "Asia" },
+//         { lat: -25, lng: 135, width: 40, height: 30, name: "Australia" },
+//     ];
     
-    continentShapes.forEach((shape, i) => {
-        const material = new THREE.LineBasicMaterial({ 
-            color: 0xA9CCE3,
-            linewidth: 1
-        });
+//     continentShapes.forEach((shape, i) => {
+//         const material = new THREE.LineBasicMaterial({ 
+//             color: 0xA9CCE3,
+//             linewidth: 1
+//         });
         
-        // Convert to 3D coordinates and create line segments
-        const shape3D = createContinentMesh(shape, radius);
-        const continent = new THREE.Line(shape3D, material);
-        continent.userData = { name: shape.name, originalColor: 0xA9CCE3 };
-        countries[`continent-${i}`] = continent;
-        globeGroup.add(continent);  // Add to group instead of scene
-    });
-}
+//         // Convert to 3D coordinates and create line segments
+//         const shape3D = createContinentMesh(shape, radius);
+//         const continent = new THREE.Line(shape3D, material);
+//         continent.userData = { name: shape.name, originalColor: 0xA9CCE3 };
+//         countries[`continent-${i}`] = continent;
+//         globeGroup.add(continent);  // Add to group instead of scene
+//     });
+// }
 
-// Create a simple continent shape from lat/lng/width/height
-function createContinentMesh({ lat, lng, width, height }, radius) {
-    const points = [];
-    const geometry = new THREE.BufferGeometry();
+// // Create a simple continent shape from lat/lng/width/height
+// function createContinentMesh({ lat, lng, width, height }, radius) {
+//     const points = [];
+//     const geometry = new THREE.BufferGeometry();
     
-    // Create a rough rectangular shape on the sphere surface
-    const centerX = lng;
-    const centerY = lat;
+//     // Create a rough rectangular shape on the sphere surface
+//     const centerX = lng;
+//     const centerY = lat;
     
-    // Rectangle points
-    const corners = [
-        [centerX - width/2, centerY - height/2],
-        [centerX + width/2, centerY - height/2],
-        [centerX + width/2, centerY + height/2],
-        [centerX - width/2, centerY + height/2],
-        [centerX - width/2, centerY - height/2] // Close the loop
-    ];
+//     // Rectangle points
+//     const corners = [
+//         [centerX - width/2, centerY - height/2],
+//         [centerX + width/2, centerY - height/2],
+//         [centerX + width/2, centerY + height/2],
+//         [centerX - width/2, centerY + height/2],
+//         [centerX - width/2, centerY - height/2] // Close the loop
+//     ];
     
-    corners.forEach(corner => {
-        const [lng, lat] = corner;
-        const point = latLngToVector3(lat, lng, radius);
-        points.push(point);
-    });
+//     corners.forEach(corner => {
+//         const [lng, lat] = corner;
+//         const point = latLngToVector3(lat, lng, radius);
+//         points.push(point);
+//     });
     
-    geometry.setFromPoints(points);
-    return geometry;
-}
+//     geometry.setFromPoints(points);
+//     return geometry;
+// }
 
 // Create country outlines from GeoJSON
 function createCountryOutlines(geoJson, radius) {
@@ -190,9 +195,11 @@ function createCountryOutlines(geoJson, radius) {
 
 function createCountryPart(coords, radius, countryGroup) {
     const points = [];
-    // Implement basic LOD - reduce points when further away
-    const skipPoints = camera.position.z > 300 ? 2 : 1;
+    // Implement smarter LOD based on distance and screen space
+    const distance = camera.position.z;
+    const skipPoints = Math.max(1, Math.floor(distance / 100));
     
+    // Decimate geometry based on distance
     for (let i = 0; i < coords[0].length; i += skipPoints) {
         const coord = coords[0][i];
         const [lng, lat] = coord;
@@ -200,36 +207,39 @@ function createCountryPart(coords, radius, countryGroup) {
         points.push(point);
     }
     
-    // Reuse geometry from pool
-    const lineGeometry = geometryPool.line.clone();
-    lineGeometry.setFromPoints(points);
+    // Use indexed geometry for better performance
+    const lineGeometry = new THREE.BufferGeometry();
+    lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap(p => [p.x, p.y, p.z]), 3));
+    lineGeometry.computeBoundingSphere();
     
-    // Reuse material from pool
     const countryLine = new THREE.Line(lineGeometry, materialPool.line.clone());
     
-    // Create shape for country area
+    // Optimize shape geometry
+    const shapeGeometry = new THREE.BufferGeometry();
     const vertices = [];
-    const triangles = [];
-    const center = new THREE.Vector3(0, 0, 0);
+    const uvs = [];
     
-    points.forEach(point => center.add(point));
+    // Create optimized triangle fan
+    const center = new THREE.Vector3();
+    points.forEach(p => center.add(p));
     center.divideScalar(points.length);
     center.normalize().multiplyScalar(radius);
     
     for (let i = 0; i < points.length - 1; i++) {
         vertices.push(
-            points[i].x, points[i].y, points[i].z,
-            points[i + 1].x, points[i + 1].y, points[i + 1].z,
-            center.x, center.y, center.z
+            ...center.toArray(),
+            ...points[i].toArray(),
+            ...points[i + 1].toArray()
         );
-        triangles.push(i * 3, i * 3 + 1, i * 3 + 2);
+        
+        // Add UVs for shader-based effects
+        uvs.push(0, 0, 0, 1, 1, 1);
     }
     
-    const shapeGeometry = geometryPool.shape.clone();
     shapeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    shapeGeometry.setIndex(triangles);
+    shapeGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     shapeGeometry.computeVertexNormals();
-    shapeGeometry.computeBoundingSphere(); // Add bounding sphere for frustum culling
+    shapeGeometry.computeBoundingSphere();
     
     const countryShape = new THREE.Mesh(shapeGeometry, materialPool.shape.clone());
     
@@ -282,11 +292,11 @@ function onMouseMove(event) {
             y: event.clientY - previousMousePosition.y
         };
 
-        globeRotation.x += deltaMove.y * 0.005;
-        globeRotation.y += deltaMove.x * 0.005;
+        targetRotation.x += deltaMove.y * 0.005;
+        targetRotation.y += deltaMove.x * 0.005;
 
         // Limit vertical rotation to avoid flipping
-        globeRotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, globeRotation.x));
+        targetRotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, targetRotation.x));
 
         previousMousePosition = {
             x: event.clientX,
@@ -294,12 +304,14 @@ function onMouseMove(event) {
         };
     }
     
-    // Throttle the intersection checking for better performance
-    throttledCheckIntersections();
+    // Reduce raycasting frequency
+    if (!isDragging) {
+        throttledCheckIntersections();
+    }
 }
 
 // Throttled version of checkIntersections
-const throttledCheckIntersections = throttle(checkIntersections, 50);
+const throttledCheckIntersections = throttle(checkIntersections, 100);
 
 // Check for intersections with mouse and countries
 function checkIntersections() {
@@ -391,7 +403,7 @@ function onMouseUp() {
     // Resume auto-rotation after a short delay
     setTimeout(() => {
         isAutoRotating = true;
-    }, 1500);
+    }, 1000);
 }
 
 // Add new zoom function
@@ -411,7 +423,7 @@ function onMouseWheel(event) {
     clearTimeout(this.wheelTimeout);
     this.wheelTimeout = setTimeout(() => {
         isAutoRotating = true;
-    }, 1500);
+    }, 500);
 }
 
 // Animation loop
@@ -419,14 +431,21 @@ function animate() {
     requestAnimationFrame(animate);
     
     if (isAutoRotating) {
-        globeRotation.y += autoRotationSpeed;
+        targetRotation.y += autoRotationSpeed;
     }
     
-    // Only update rotation if it changed
-    if (globeGroup.rotation.x !== globeRotation.x || 
-        globeGroup.rotation.y !== globeRotation.y) {
+    // Smooth interpolation between current and target rotation
+    globeRotation.x += (targetRotation.x - globeRotation.x) * INTERPOLATION_FACTOR;
+    globeRotation.y += (targetRotation.y - globeRotation.y) * INTERPOLATION_FACTOR;
+    
+    // Only update if rotation changed significantly
+    if (Math.abs(lastRotation.x - globeRotation.x) > 0.0001 || 
+        Math.abs(lastRotation.y - globeRotation.y) > 0.0001) {
         globeGroup.rotation.x = globeRotation.x;
         globeGroup.rotation.y = globeRotation.y;
+        
+        lastRotation.x = globeRotation.x;
+        lastRotation.y = globeRotation.y;
     }
     
     renderer.render(scene, camera);
