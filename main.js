@@ -1,4 +1,5 @@
 import { countryNamesByCode } from './countryData.js';
+import { fetchCountryStats } from './api.js';
 
 // Global variables
 let scene, camera, renderer, raycaster, mouse, countryNameDisplay;
@@ -76,6 +77,7 @@ function init() {
     renderer.domElement.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mouseup', onMouseUp);
     renderer.domElement.addEventListener('wheel', onMouseWheel);
+    renderer.domElement.addEventListener('dblclick', onDoubleClick);
     
     // Start animation
     animate();
@@ -424,6 +426,66 @@ function onMouseWheel(event) {
     this.wheelTimeout = setTimeout(() => {
         isAutoRotating = true;
     }, 500);
+}
+
+// Add this function to handle double-click events
+function onDoubleClick(event) {
+    raycaster.setFromCamera(mouse, camera);
+
+    // Get all meshes for intersection testing
+    const allMeshes = [];
+    Object.values(countries).forEach(country => {
+        if (country.userData.parts) {
+            country.userData.parts.forEach(part => {
+                allMeshes.push(part.line);
+                allMeshes.push(part.shape);
+            });
+        } else {
+            allMeshes.push(country);
+        }
+    });
+
+    const intersects = raycaster.intersectObjects(allMeshes);
+
+    if (intersects.length > 0) {
+        const intersectedObject = intersects[0].object;
+        const countryGroup = intersectedObject.parent;
+
+        // Fetch and display stats for the double-clicked country
+        const countryName = countryGroup.userData.name;
+        fetchCountryStats(countryName).then(stats => {
+            if (stats) {
+                displayCountryStats(countryName, stats);
+            } else {
+                console.error(`No stats available for ${countryName}`);
+            }
+        });
+    }
+}
+
+// Add this function to display the country stats
+function displayCountryStats(countryName, stats) {
+    const statsContainer = document.getElementById('country-stats');
+    if (!statsContainer) {
+        console.error("Stats container not found in the DOM.");
+        return;
+    }
+
+    // Clear previous stats
+    statsContainer.innerHTML = `<h2>${countryName}</h2>`;
+    if (stats) {
+        // Display relevant stats from the REST Countries API
+        statsContainer.innerHTML += `
+            <p><strong>Population:</strong> ${stats.population.toLocaleString()}</p>
+            <p><strong>Region:</strong> ${stats.region}</p>
+            <p><strong>Subregion:</strong> ${stats.subregion}</p>
+            <p><strong>Capital:</strong> ${stats.capital ? stats.capital[0] : 'N/A'}</p>
+            <p><strong>Area:</strong> ${stats.area.toLocaleString()} km²</p>
+            <p><strong>Languages:</strong> ${stats.languages ? Object.values(stats.languages).join(', ') : 'N/A'}</p>
+        `;
+    } else {
+        statsContainer.innerHTML += "<p>No data available.</p>";
+    }
 }
 
 // Animation loop
