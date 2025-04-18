@@ -1,5 +1,7 @@
+/* global THREE, topojson */
 import { countryNamesByCode } from './countryData.js';
 import { fetchCountryStats } from './api.js';
+import { initErrorHandling, sanitizeString } from './js/errorHandler.js';
 
 // Global variables
 let scene, camera, renderer, raycaster, mouse, countryNameDisplay;
@@ -15,12 +17,8 @@ let currentZoom = 200;
 let isAutoRotating = true;
 const autoRotationSpeed = 0.0005; // Very slow rotation speed
 
-// Add object pooling for geometries and materials
-let geometryPool = {
-    line: new THREE.BufferGeometry(),
-    shape: new THREE.BufferGeometry()
-};
-let materialPool = {
+// Material pool for better performance
+const materialPool = {
     line: new THREE.LineBasicMaterial({ color: 0x17202a, linewidth: 1 }),
     shape: new THREE.MeshPhongMaterial({
         color: 0xA9CCE3,
@@ -35,6 +33,9 @@ let materialPool = {
 let lastRotation = { x: 0, y: 0 };
 let targetRotation = { x: 0, y: 0 };
 const INTERPOLATION_FACTOR = 0.1;
+
+// Initialize error handling
+initErrorHandling();
 
 // Initialize the scene
 function init() {
@@ -114,61 +115,6 @@ function createGlobe() {
         });
 }
 
-// Create a simulated globe with fake continents in case the real data fails to load
-// function createSimulatedGlobe(radius) {
-//     // Create some simple continent shapes
-//     const continentShapes = [
-//         { lat: 40, lng: -100, width: 60, height: 30, name: "North America" },
-//         { lat: 10, lng: -60, width: 40, height: 40, name: "South America" },
-//         { lat: 50, lng: 10, width: 60, height: 40, name: "Europe" },
-//         { lat: 10, lng: 20, width: 70, height: 60, name: "Africa" },
-//         { lat: 40, lng: 100, width: 70, height: 50, name: "Asia" },
-//         { lat: -25, lng: 135, width: 40, height: 30, name: "Australia" },
-//     ];
-    
-//     continentShapes.forEach((shape, i) => {
-//         const material = new THREE.LineBasicMaterial({ 
-//             color: 0xA9CCE3,
-//             linewidth: 1
-//         });
-        
-//         // Convert to 3D coordinates and create line segments
-//         const shape3D = createContinentMesh(shape, radius);
-//         const continent = new THREE.Line(shape3D, material);
-//         continent.userData = { name: shape.name, originalColor: 0xA9CCE3 };
-//         countries[`continent-${i}`] = continent;
-//         globeGroup.add(continent);  // Add to group instead of scene
-//     });
-// }
-
-// // Create a simple continent shape from lat/lng/width/height
-// function createContinentMesh({ lat, lng, width, height }, radius) {
-//     const points = [];
-//     const geometry = new THREE.BufferGeometry();
-    
-//     // Create a rough rectangular shape on the sphere surface
-//     const centerX = lng;
-//     const centerY = lat;
-    
-//     // Rectangle points
-//     const corners = [
-//         [centerX - width/2, centerY - height/2],
-//         [centerX + width/2, centerY - height/2],
-//         [centerX + width/2, centerY + height/2],
-//         [centerX - width/2, centerY + height/2],
-//         [centerX - width/2, centerY - height/2] // Close the loop
-//     ];
-    
-//     corners.forEach(corner => {
-//         const [lng, lat] = corner;
-//         const point = latLngToVector3(lat, lng, radius);
-//         points.push(point);
-//     });
-    
-//     geometry.setFromPoints(points);
-//     return geometry;
-// }
-
 // Create country outlines from GeoJSON
 function createCountryOutlines(geoJson, radius) {
     geoJson.features.forEach(feature => {
@@ -196,37 +142,46 @@ function createCountryOutlines(geoJson, radius) {
 }
 
 function createCountryPart(coords, radius, countryGroup) {
+    if (!coords || !coords[0] || coords[0].length < 3) {
+        return; // Skip invalid geometries
+    }
+
     const points = [];
-    // Implement smarter LOD based on distance and screen space
     const distance = camera.position.z;
     const skipPoints = Math.max(1, Math.floor(distance / 100));
     
     // Decimate geometry based on distance
     for (let i = 0; i < coords[0].length; i += skipPoints) {
         const coord = coords[0][i];
-        const [lng, lat] = coord;
-        const point = latLngToVector3(lat, lng, radius);
-        points.push(point);
+        if (Array.isArray(coord) && coord.length >= 2) {
+            const [lng, lat] = coord;
+            const point = latLngToVector3(lat, lng, radius);
+            points.push(point);
+        }
     }
-    
-    // Use indexed geometry for better performance
+
+    if (points.length < 3) {
+        return; // Need at least 3 points for a valid shape
+    }
+
+    // Create line geometry
     const lineGeometry = new THREE.BufferGeometry();
     lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap(p => [p.x, p.y, p.z]), 3));
     lineGeometry.computeBoundingSphere();
     
     const countryLine = new THREE.Line(lineGeometry, materialPool.line.clone());
     
-    // Optimize shape geometry
+    // Create shape geometry
     const shapeGeometry = new THREE.BufferGeometry();
     const vertices = [];
     const uvs = [];
     
-    // Create optimized triangle fan
     const center = new THREE.Vector3();
     points.forEach(p => center.add(p));
     center.divideScalar(points.length);
     center.normalize().multiplyScalar(radius);
-    
+
+    // Create triangle fan around center point
     for (let i = 0; i < points.length - 1; i++) {
         vertices.push(
             ...center.toArray(),
@@ -234,9 +189,16 @@ function createCountryPart(coords, radius, countryGroup) {
             ...points[i + 1].toArray()
         );
         
-        // Add UVs for shader-based effects
         uvs.push(0, 0, 0, 1, 1, 1);
     }
+    
+    // Close the shape by connecting last point to first point
+    vertices.push(
+        ...center.toArray(),
+        ...points[points.length - 1].toArray(),
+        ...points[0].toArray()
+    );
+    uvs.push(0, 0, 0, 1, 1, 1);
     
     shapeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
     shapeGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
@@ -245,7 +207,6 @@ function createCountryPart(coords, radius, countryGroup) {
     
     const countryShape = new THREE.Mesh(shapeGeometry, materialPool.shape.clone());
     
-    // Enable frustum culling
     countryLine.frustumCulled = true;
     countryShape.frustumCulled = true;
     
@@ -269,16 +230,26 @@ function latLngToVector3(lat, lng, radius) {
     return new THREE.Vector3(x, y, z);
 }
 
+// Create a simulated globe with basic shapes if data loading fails
+function createSimulatedGlobe(radius) {
+    const basicShape = new THREE.SphereGeometry(radius, 32, 32);
+    const basicMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xA9CCE3,
+        wireframe: true 
+    });
+    const basicGlobe = new THREE.Mesh(basicShape, basicMaterial);
+    globeGroup.add(basicGlobe);
+}
+
 // Throttle function to limit how often a function can be called
 function throttle(func, limit) {
     let inThrottle;
-    return function() {
-        const args = arguments;
+    return function(...args) {
         const context = this;
         if (!inThrottle) {
             func.apply(context, args);
             inThrottle = true;
-            setTimeout(() => inThrottle = false, limit);
+            setTimeout(() => { inThrottle = false; }, limit);
         }
     };
 }
@@ -402,19 +373,18 @@ function onMouseDown(event) {
 // Handle mouse up event
 function onMouseUp() {
     isDragging = false;
-    // Resume auto-rotation after a short delay
     setTimeout(() => {
         isAutoRotating = true;
     }, 1000);
 }
 
-// Add new zoom function
-function onMouseWheel(event) {
-    event.preventDefault();
+// Handle mouse wheel event
+function onMouseWheel(e) {
+    e.preventDefault();
     isAutoRotating = false;  // Stop auto-rotation during zoom
     
     const zoomSpeed = 15;
-    const delta = -Math.sign(event.deltaY) * zoomSpeed;
+    const delta = -Math.sign(e.deltaY) * zoomSpeed;
     
     currentZoom = camera.position.z - delta;
     currentZoom = Math.max(minZoom, Math.min(maxZoom, currentZoom));
@@ -428,8 +398,8 @@ function onMouseWheel(event) {
     }, 500);
 }
 
-// Add this function to handle double-click events
-function onDoubleClick(event) {
+// Handle double-click event
+function onDoubleClick() {
     raycaster.setFromCamera(mouse, camera);
 
     // Get all meshes for intersection testing
@@ -463,7 +433,6 @@ function onDoubleClick(event) {
     }
 }
 
-// Add this function to display the country stats
 function displayCountryStats(countryName, stats) {
     const statsContainer = document.getElementById('country-stats');
     if (!statsContainer) {
@@ -471,17 +440,62 @@ function displayCountryStats(countryName, stats) {
         return;
     }
 
+    // Sanitize inputs
+    const sanitizedCountryName = sanitizeString(countryName);
+    
     // Clear previous stats
-    statsContainer.innerHTML = `<h2>${countryName}</h2>`;
+    statsContainer.innerHTML = `<h2>${sanitizedCountryName}</h2>`;
     if (stats) {
-        // Display relevant stats from the REST Countries API
+        // Sanitize all string inputs
+        const currencies = stats.currencies ? Object.values(stats.currencies)
+            .map(c => `${sanitizeString(c.name)} (${sanitizeString(c.symbol || '')})`)
+            .join(', ') : 'N/A';
+        
+        // Format population density
+        const populationDensity = stats.area ? (stats.population / stats.area).toFixed(2) : 'N/A';
+        
+        // Format car info
+        const carInfo = stats.car ? `${sanitizeString(stats.car.side)} side, ${stats.car.signs ? stats.car.signs.map(sanitizeString).join(', ') : 'N/A'}` : 'N/A';
+        
+        // Get start of week
+        const startOfWeek = stats.startOfWeek ? sanitizeString(stats.startOfWeek.charAt(0).toUpperCase() + stats.startOfWeek.slice(1)) : 'N/A';
+
+        // Format GINI index - get the most recent year's value
+        let giniIndex = 'N/A';
+        if (stats.gini && typeof stats.gini === 'object') {
+            const giniYears = Object.keys(stats.gini).sort((a, b) => b - a); // Sort years descending
+            if (giniYears.length > 0) {
+                const latestYear = giniYears[0];
+                giniIndex = `${stats.gini[latestYear].toFixed(1)}% (${latestYear})`;
+            }
+        }
+        
         statsContainer.innerHTML += `
+            <h3>Population & Demographics</h3>
             <p><strong>Population:</strong> ${stats.population.toLocaleString()}</p>
-            <p><strong>Region:</strong> ${stats.region}</p>
-            <p><strong>Subregion:</strong> ${stats.subregion}</p>
-            <p><strong>Capital:</strong> ${stats.capital ? stats.capital[0] : 'N/A'}</p>
+            <p><strong>Density:</strong> ${populationDensity} people/km²</p>
+            ${stats.demonyms ? `<p><strong>Demonym:</strong> ${sanitizeString(stats.demonyms.eng.m)}/${sanitizeString(stats.demonyms.eng.f)}</p>` : ''}
+            <p><strong>Languages:</strong> ${stats.languages ? Object.values(stats.languages).map(sanitizeString).join(', ') : 'N/A'}</p>
+            
+            <h3>Geography & Administration</h3>
+            <p><strong>Region:</strong> ${sanitizeString(stats.region)}</p>
+            <p><strong>Subregion:</strong> ${sanitizeString(stats.subregion || 'N/A')}</p>
+            <p><strong>Capital:</strong> ${sanitizeString(stats.capital ? stats.capital[0] : 'N/A')}</p>
             <p><strong>Area:</strong> ${stats.area.toLocaleString()} km²</p>
-            <p><strong>Languages:</strong> ${stats.languages ? Object.values(stats.languages).join(', ') : 'N/A'}</p>
+            ${stats.borders ? `<p><strong>Borders:</strong> ${stats.borders.map(sanitizeString).join(', ')}</p>` : ''}
+            
+            <h3>Economic & Social</h3>
+            <p><strong>Currency:</strong> ${currencies}</p>
+            <p><strong>GINI Index:</strong> ${giniIndex}</p>
+            <p><strong>UN Member:</strong> ${stats.unMember ? 'Yes' : 'No'}</p>
+            <p><strong>Independent:</strong> ${stats.independent ? 'Yes' : 'No'}</p>
+            
+            <h3>Additional Info</h3>
+            <p><strong>Timezones:</strong> ${stats.timezones.map(sanitizeString).join(', ')}</p>
+            <p><strong>Driving:</strong> ${carInfo}</p>
+            <p><strong>Week starts:</strong> ${startOfWeek}</p>
+            ${stats.tld ? `<p><strong>Domain:</strong> ${stats.tld.map(sanitizeString).join(', ')}</p>` : ''}
+            ${stats.idd?.root ? `<p><strong>Phone Code:</strong> ${sanitizeString(stats.idd.root)}${sanitizeString(stats.idd.suffixes?.[0] || '')}</p>` : ''}
         `;
     } else {
         statsContainer.innerHTML += "<p>No data available.</p>";

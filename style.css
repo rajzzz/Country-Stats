@@ -29,20 +29,44 @@ body {
     right: 20px;
     background: rgba(0, 0, 0, 0.85);
     color: white;
-    padding: 15px;
+    padding: 20px;
     border-radius: 10px;
-    max-width: 300px;
+    max-width: 350px;
+    max-height: 80vh;
+    overflow-y: auto;
     box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5);
     font-size: 0.9rem;
     line-height: 1.5;
 }
 
+#country-stats::-webkit-scrollbar {
+    width: 8px;
+}
+
+#country-stats::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+#country-stats::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+}
+
 #country-stats h2 {
-    margin: 0 0 10px;
+    margin: 0 0 15px;
     font-size: 1.5rem;
     color: #f1c40f;
     text-align: center;
     text-shadow: 0px 0px 5px rgba(0, 0, 0, 0.7);
+}
+
+#country-stats h3 {
+    color: #3498db;
+    margin: 15px 0 8px;
+    font-size: 1.1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 5px;
 }
 
 #country-stats p {
@@ -52,4 +76,6 @@ body {
 
 #country-stats p strong {
     color: #2ecc71;
+    min-width: 120px;
+    display: inline-block;
 }

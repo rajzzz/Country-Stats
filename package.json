@@ -3,12 +3,22 @@
     "version": "1.0.0",
     "description": "Interactive 3D Globe with Country Statistics",
     "scripts": {
-        "start": "npx live-server --port=8080 --no-browser"
+        "start": "npx live-server --port=8080 --no-browser",
+        "audit": "npm audit",
+        "audit:fix": "npm audit fix"
     },
     "dependencies": {
+        "cors": "^2.8.5",
+        "express": "^4.18.2",
+        "express-rate-limit": "^7.5.0",
+        "helmet": "^7.2.0",
+        "node-fetch": "^3.3.2",
+        "sanitize-html": "^2.16.0",
         "three": "^0.174.0"
     },
     "devDependencies": {
+        "eslint": "^8.57.1",
+        "eslint-plugin-security": "^2.1.1",
         "vite": "^6.2.2"
     },
     "main": "main.js",
@@ -23,5 +33,8 @@
     "bugs": {
         "url": "https://github.com/rajzzz/Country-Stats/issues"
     },
-    "homepage": "https://github.com/rajzzz/Country-Stats#readme"
+    "homepage": "https://github.com/rajzzz/Country-Stats#readme",
+    "engines": {
+        "node": ">=18.0.0"
+    }
 }

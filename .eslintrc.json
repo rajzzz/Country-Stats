@@ -1,0 +1,32 @@
+{
+    "env": {
+        "browser": true,
+        "es2021": true,
+        "node": true
+    },
+    "extends": ["eslint:recommended"],
+    "parserOptions": {
+        "ecmaVersion": "latest",
+        "sourceType": "module"
+    },
+    "rules": {
+        "no-eval": "error",
+        "no-implied-eval": "error",
+        "no-new-func": "error",
+        "no-param-reassign": "error",
+        "no-prototype-builtins": "error",
+        "no-return-assign": "error",
+        "no-script-url": "error",
+        "no-self-compare": "error",
+        "no-sequences": "error",
+        "no-throw-literal": "error",
+        "no-unused-expressions": "error",
+        "no-useless-call": "error",
+        "no-useless-concat": "error",
+        "no-void": "error",
+        "no-with": "error",
+        "radix": "error",
+        "wrap-iife": ["error", "any"],
+        "yoda": "error"
+    }
+}
