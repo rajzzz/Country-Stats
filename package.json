@@ -3,7 +3,10 @@
     "version": "1.0.0",
     "description": "Interactive 3D Globe with Country Statistics",
     "scripts": {
-        "start": "npx live-server --port=8080 --no-browser",
+        "start": "node server.js",
+        "dev": "npx live-server --port=8080 --no-browser",
+        "build": "vite build",
+        "preview": "vite preview",
         "audit": "npm audit",
         "audit:fix": "npm audit fix"
     },

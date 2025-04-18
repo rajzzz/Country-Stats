@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: country-stats-api
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ALLOWED_ORIGIN
+        value: https://country-stats-web.onrender.com
+
+  - type: static
+    name: country-stats-web
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://country-stats-api.onrender.com
