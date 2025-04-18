@@ -63,5 +63,6 @@ export const countryNamesByCode = {
     913: "South Ossetia",
     914: "Transnistria",
     915: "Wake Island",
-    916: "Abkhazia"
+    916: "Abkhazia",
+    917: "Kosovo"
 };

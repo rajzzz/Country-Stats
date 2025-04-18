@@ -8,6 +8,7 @@ let scene, camera, renderer, raycaster, mouse, countryNameDisplay;
 let globe, globeGroup;
 let countries = {};
 let hoveredCountry = null;
+let selectedCountry = null;  // Track currently selected country
 let isDragging = false;
 let previousMousePosition = { x: 0, y: 0 };
 let globeRotation = { x: 0, y: 0 };
@@ -89,7 +90,7 @@ function createGlobe() {
     const radius = 100;
     const globeGeometry = new THREE.SphereGeometry(radius, 64, 64);
     const globeMaterial = new THREE.MeshPhongMaterial({
-        color: 0xfef9e7 ,
+        color: 0xfef9e7,
         transparent: false,
         opacity: 1
     });
@@ -108,11 +109,83 @@ function createGlobe() {
                 feature.properties.name = countryNamesByCode[feature.id] || `Country ${feature.id}`;
             });
             createCountryOutlines(countries, radius);
+            
+            // Add Kosovo manually after other countries are loaded
+            addKosovo(radius);
         })
         .catch(error => {
             console.error('Error loading data:', error);
             createSimulatedGlobe(radius);
         });
+}
+
+// Add Kosovo as a separate country
+function addKosovo(radius) {
+    // Kosovo's approximate coordinates (vertices of the polygon)
+    const kosovoPoints = [
+        [20.590, 43.033], // Northwest
+        [20.520, 42.460], // Southwest
+        [21.020, 42.260], // South
+        [21.770, 42.310], // Southeast
+        [21.590, 42.862], // Northeast
+        [20.590, 43.033]  // Back to start
+    ].map(([lng, lat]) => latLngToVector3(lat, lng, radius));
+
+    // Create Kosovo's outline
+    const lineGeometry = new THREE.BufferGeometry();
+    lineGeometry.setAttribute('position', 
+        new THREE.Float32BufferAttribute(kosovoPoints.flatMap(p => [p.x, p.y, p.z]), 3)
+    );
+    
+    const countryGroup = new THREE.Group();
+    countryGroup.userData = { 
+        name: "Kosovo",
+        originalColor: 0x17202a,
+        id: 917,
+        parts: []
+    };
+
+    // Create line
+    const countryLine = new THREE.Line(lineGeometry, materialPool.line.clone());
+    
+    // Create shape
+    const shapeGeometry = new THREE.BufferGeometry();
+    const vertices = [];
+    const uvs = [];
+    
+    const center = new THREE.Vector3();
+    kosovoPoints.forEach(p => center.add(p));
+    center.divideScalar(kosovoPoints.length);
+    center.normalize().multiplyScalar(radius);
+
+    // Create triangle fan
+    for (let i = 0; i < kosovoPoints.length - 1; i++) {
+        vertices.push(
+            ...center.toArray(),
+            ...kosovoPoints[i].toArray(),
+            ...kosovoPoints[i + 1].toArray()
+        );
+        uvs.push(0, 0, 0, 1, 1, 1);
+    }
+    
+    shapeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    shapeGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    shapeGeometry.computeVertexNormals();
+    
+    const countryShape = new THREE.Mesh(shapeGeometry, materialPool.shape.clone());
+    
+    countryLine.frustumCulled = true;
+    countryShape.frustumCulled = true;
+    
+    countryGroup.add(countryLine);
+    countryGroup.add(countryShape);
+    countryGroup.userData.parts.push({
+        line: countryLine,
+        shape: countryShape
+    });
+    
+    countries[917] = countryGroup;
+    globeGroup.add(countryGroup);
 }
 
 // Create country outlines from GeoJSON
@@ -290,14 +363,13 @@ const throttledCheckIntersections = throttle(checkIntersections, 100);
 function checkIntersections() {
     raycaster.setFromCamera(mouse, camera);
     
-    // Reset previously hovered country
-    if (hoveredCountry) {
+    // Only reset hover effect if it's not the selected country
+    if (hoveredCountry && hoveredCountry !== selectedCountry) {
         const country = countries[hoveredCountry];
         if (country) {
             if (country.userData.parts) {
                 country.userData.parts.forEach(part => {
                     part.line.material.color.setHex(country.userData.originalColor);
-                    //part.shape.material.color.setHex(country.userData.originalColor);
                     part.shape.material.opacity = 0;
                     part.line.material.needsUpdate = true;
                     part.shape.material.needsUpdate = true;
@@ -308,7 +380,9 @@ function checkIntersections() {
             }
         }
         hoveredCountry = null;
-        countryNameDisplay.textContent = '';
+        if (!selectedCountry) {
+            countryNameDisplay.textContent = '';
+        }
     }
 
     // Get all meshes for intersection testing
@@ -331,25 +405,31 @@ function checkIntersections() {
         const intersectedObject = intersects[0].object;
         const countryGroup = intersectedObject.parent;
         
-        hoveredCountry = countryGroup.userData.id;
-        const highlightColor = 0xFFFFFF;
-        const linehighlightColor = 0x17202a;
-        
-        if (countryGroup.userData.parts) {
-            countryGroup.userData.parts.forEach(part => {
-                part.line.material.color.setHex(linehighlightColor);
-                part.shape.material.color.setHex(highlightColor);
-                part.shape.material.opacity = 0.6;  // Increased opacity for better visibility
-                part.line.material.needsUpdate = true;
-                part.shape.material.needsUpdate = true;
-            });
-        } else {
-            // Handle the case for simulated globe where countries are single lines
-            countryGroup.material.color.setHex(highlightColor);
-            countryGroup.material.needsUpdate = true;
+        // Don't override selected country highlight
+        if (countryGroup.userData.id !== selectedCountry) {
+            hoveredCountry = countryGroup.userData.id;
+            const highlightColor = 0xFFFFFF;
+            const linehighlightColor = 0x17202a;
+            
+            if (countryGroup.userData.parts) {
+                countryGroup.userData.parts.forEach(part => {
+                    part.line.material.color.setHex(linehighlightColor);
+                    part.shape.material.color.setHex(highlightColor);
+                    part.shape.material.opacity = 0.6;
+                    part.line.material.needsUpdate = true;
+                    part.shape.material.needsUpdate = true;
+                });
+            } else {
+                countryGroup.material.color.setHex(highlightColor);
+                countryGroup.material.needsUpdate = true;
+            }
+            
+            if (!selectedCountry) {
+                countryNameDisplay.textContent = countryGroup.userData.name;
+            }
         }
-        
-        countryNameDisplay.textContent = countryGroup.userData.name;
+    } else if (!selectedCountry) {
+        countryNameDisplay.textContent = '';
     }
 }
 
@@ -417,20 +497,71 @@ function onDoubleClick() {
 
     const intersects = raycaster.intersectObjects(allMeshes);
 
-    if (intersects.length > 0) {
-        const intersectedObject = intersects[0].object;
-        const countryGroup = intersectedObject.parent;
-
-        // Fetch and display stats for the double-clicked country
-        const countryName = countryGroup.userData.name;
-        fetchCountryStats(countryName).then(stats => {
-            if (stats) {
-                displayCountryStats(countryName, stats);
-            } else {
-                console.error(`No stats available for ${countryName}`);
+    // Reset previous selection if clicking on empty space
+    if (intersects.length === 0) {
+        if (selectedCountry) {
+            const prevCountry = countries[selectedCountry];
+            if (prevCountry && prevCountry.userData.parts) {
+                prevCountry.userData.parts.forEach(part => {
+                    part.line.material.color.setHex(prevCountry.userData.originalColor);
+                    part.shape.material.opacity = 0;
+                    part.line.material.needsUpdate = true;
+                    part.shape.material.needsUpdate = true;
+                });
             }
+        }
+        selectedCountry = null;
+        countryNameDisplay.textContent = '';
+        const statsContainer = document.getElementById('country-stats');
+        statsContainer.innerHTML = '';
+        return;
+    }
+
+    const intersectedObject = intersects[0].object;
+    const countryGroup = intersectedObject.parent;
+    const countryName = countryGroup.userData.name;
+
+    // Reset previous selection if different from current
+    if (selectedCountry && selectedCountry !== countryGroup.userData.id) {
+        const prevCountry = countries[selectedCountry];
+        if (prevCountry && prevCountry.userData.parts) {
+            prevCountry.userData.parts.forEach(part => {
+                prevCountry.userData.parts.forEach(part => {
+                    part.line.material.color.setHex(prevCountry.userData.originalColor);
+                    part.shape.material.opacity = 0;
+                    part.line.material.needsUpdate = true;
+                    part.shape.material.needsUpdate = true;
+                });
+            });
+        }
+    }
+
+    // Set new selection
+    selectedCountry = countryGroup.userData.id;
+    countryNameDisplay.textContent = countryName;
+
+    // Highlight selected country
+    const highlightColor = 0xFFFFFF;
+    const linehighlightColor = 0x17202a;
+    
+    if (countryGroup.userData.parts) {
+        countryGroup.userData.parts.forEach(part => {
+            part.line.material.color.setHex(linehighlightColor);
+            part.shape.material.color.setHex(highlightColor);
+            part.shape.material.opacity = 0.6;
+            part.line.material.needsUpdate = true;
+            part.shape.material.needsUpdate = true;
         });
     }
+
+    // Fetch and display stats
+    fetchCountryStats(countryName).then(stats => {
+        if (stats) {
+            displayCountryStats(countryName, stats);
+        } else {
+            console.error(`No stats available for ${countryName}`);
+        }
+    });
 }
 
 function displayCountryStats(countryName, stats) {
@@ -444,8 +575,17 @@ function displayCountryStats(countryName, stats) {
     const sanitizedCountryName = sanitizeString(countryName);
     
     // Clear previous stats
-    statsContainer.innerHTML = `<h2>${sanitizedCountryName}</h2>`;
+    statsContainer.innerHTML = '';
+    
     if (stats) {
+        // Add flag and country name
+        statsContainer.innerHTML = `
+            <div style="text-align: center; margin-bottom: 15px;">
+                ${stats.flags ? `<img src="${stats.flags.png}" alt="${sanitizedCountryName} flag" style="max-width: 100px; margin-bottom: 10px;">` : ''}
+                <h2>${sanitizedCountryName}</h2>
+            </div>
+        `;
+
         // Sanitize all string inputs
         const currencies = stats.currencies ? Object.values(stats.currencies)
             .map(c => `${sanitizeString(c.name)} (${sanitizeString(c.symbol || '')})`)
@@ -507,7 +647,15 @@ function animate() {
     requestAnimationFrame(animate);
     
     if (isAutoRotating) {
-        targetRotation.y += autoRotationSpeed;
+        // Calculate zoom percentage (0 = minimum zoom, 1 = maximum zoom)
+        const zoomPercentage = (currentZoom - minZoom) / (maxZoom - minZoom);
+        
+        // Only rotate if not fully zoomed in (using a threshold near 1)
+        if (zoomPercentage < 0.95) {
+            // Gradually reduce speed as we zoom in, stop completely at 95% zoom
+            const speedFactor = 1 - (zoomPercentage / 0.95);
+            targetRotation.y += autoRotationSpeed * speedFactor;
+        }
     }
     
     // Smooth interpolation between current and target rotation
